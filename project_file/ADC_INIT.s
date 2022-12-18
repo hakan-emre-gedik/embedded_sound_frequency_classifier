@@ -1,0 +1,119 @@
+RCGCADC 		EQU 0x400FE638 ; ADC clock register
+; ADC0 base address EQU 0x40038000
+ADC0_ACTSS 		EQU 0x40038000 ; Sample sequencer (ADC0 base address)
+ADC0_RIS 		EQU 0x40038004 ; Interrupt status
+ADC0_IM 		EQU 0x40038008 ; Interrupt select
+ADC0_EMUX 		EQU 0x40038014 ; Trigger select
+ADC0_PSSI 		EQU 0x40038028 ; Initiate sample
+ADC0_SSMUX3 	EQU 0x400380A0 ; Input channel select
+ADC0_SSCTL3 	EQU 0x400380A4 ; Sample sequence control
+ADC0_SSFIFO3 	EQU 0x400380A8 ; Channel 3 results
+ADC0_PC 		EQU 0x40038FC4 ; Sample rate
+ADC0_ISC		EQU 0x4003800C ; Interrupt status clear
+RCGCGPIO EQU 0x400FE608 ; GPIO clock register
+;PORT E base address EQU 0x40024000
+PORTE_DEN EQU 0x4002451C ; Digital Enable
+PORTE_PCTL EQU 0x4002452C ; Alternate function select
+PORTE_AFSEL EQU 0x40024420 ; Enable Alt functions
+PORTE_AMSEL EQU 0x40024528 ; Enable analog
+
+;LABEL		DIRECTIVE	VALUE		COMMENT
+			AREA    	ADC_INIT, READONLY, CODE
+			THUMB
+			EXPORT  	ADC_INIT ; Make available
+			IMPORT		CURRENT_PTR
+			IMPORT		READ_COMPLETE
+			
+			; SETUP PE3 TO PERFORM AN ADC READING. IT IS CONFIGURED 
+			; TO BE READ BY A POLLING OPEATION, WHICH IS CONDUCTED
+			; IN MY_ST_ISR
+ADC_INIT_	PROC
+			LDR		R1, =RCGCADC	; ADC CLCOK TO BE TURNED ON 
+				LDR		R0, [R1]
+				ORR		R0, R0, #0x01 ; ENABLE ADC0 CLOCK 
+				STR		R0, [R1]
+				NOP 
+				NOP 
+				NOP 
+				
+				LDR 	R1, =RCGCGPIO
+				LDR 	R0, [R1]
+				ORR		R0, R0, #0x10 ; ENABLE PORT E 
+				STR		R0, [R1]
+				NOP 
+				NOP 
+				NOP 
+				
+				; SETUP GPIO TO MAKE PE3 INPUT FOR ADC0 
+				LDR 	R1, =PORTE_AFSEL 
+				LDR		R0, [R1]
+				ORR		R0, R0, #0x08; 
+				STR		R0, [R1]
+				
+				; PCTL CONFIGURATION IS NOT ESSENTIAL SINCE ADC0 IS 
+				; AUTOMATICALLY SELECTED ONCE ANALOG MODE IS SELECTED 
+				
+				LDR		R1, =PORTE_DEN 
+				LDR		R0, [R1]
+				BIC 	R0, R0, #0x08; CLEAR BIT 3 TO DISABLE DIGITAL AT BIT 3 
+				STR		R0, [R1]
+				
+				; ENABLE ANALOG 
+				LDR		R1, =PORTE_AMSEL 
+				LDR		R0, [R1]
+				ORR		R0, R0, #0x08 ; SET BIT 3 TO ENABLE ANALOG 
+				LDR		R0, [R1]
+				
+				; DISABLE SEQUENCER
+				LDR		R1, =ADC0_ACTSS 
+				LDR		R0, [R1]
+				BIC 	R0, R0, #0x08; DISABLE SEQUENCER 3 
+				LDR		R0, [R1]
+				
+				; SELECT TRIGGER SOURCE
+				LDR		R1, =ADC0_EMUX
+				LDR		R0, [R1]
+				BIC 	R0, R0, #0xF000 ; CLEAR BITS 15 TO 12 TO SELECT SOFTWARE 
+				STR		R0, [R1]	
+				
+				; SELECT INPUT SOURCE 
+				LDR		R1, =ADC0_SSMUX3 
+				LDR		R0, [R1]
+				BIC		R0, R0, #0x000F ; CLEAR BITS 3 TO 0 TO SELECT AIN0 
+				STR		R0, [R1]
+				
+				; CONFIG SAMPLE SEQUENCE
+				LDR		R1, =ADC0_SSCTL3
+				LDR		R0, [R1]
+				ORR		R0, R0, #0x06 
+				STR		R0, [R1]
+				
+				; SET SAMPLE RATE
+				LDR		R1, =ADC0_PC
+				LDR		R0, [R1]
+				ORR		R0, R0, #0x01 ; SET BITS 3 TO 0 TO 1 FOR 125K
+				STR		R0, [R1]
+				
+				; ENABLE SEQUENCER 
+				LDR		R1, =ADC0_ACTSS
+				LDR		R0, [R1]
+				ORR		R0, R0, #0x08 ; ENABLE SEQUENCER 3 
+				STR		R0, [R1] ; SAMPLING ENABLED BUT NOT INITIATED
+				
+				; DISABLE INTERRUPT
+				LDR		R1, =ADC0_IM 
+				LDR		R0, [R1]
+				BIC		R0, R0, #0x08 ; DISABLE INTERRUPT
+				STR		R0, [R1]
+			
+				LDR		R1, =READ_COMPLETE 
+				MOV		R0, #0x00
+				STR		R0, [R1]
+				
+				LDR		R1, =CURRENT_PTR
+				STR		R0, [R1]
+				
+				
+			BX LR 
+			ENDP 
+END 

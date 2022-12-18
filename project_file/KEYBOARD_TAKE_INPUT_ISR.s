@@ -1,0 +1,122 @@
+GPIO_PORTC_DATA		EQU 	0x400063FC
+GPIO_PORTA_ISC 		EQU 	0x4000441C ; Interrupt Clear
+GPIO_PORTA_MIS 		EQU 	0x40004418 ; Interrupt Clear
+
+;LABEL		DIRECTIVE	VALUE		COMMENT
+			AREA    	KEYBOARD_TAKE_INPUT_ISR, READONLY, CODE
+			THUMB
+			EXPORT 		KEYBOARD_TAKE_INPUT_ISR
+			IMPORT		TRESHOLD_SETTING_MODE
+			IMPORT 		SETTING_MODE
+			EXTERN		DEBOUNCE_A 
+			IMPORT		LOW_FREQ_T
+			IMPORT		HIGH_FREQ_T
+
+			; IF SPECIFIC KEYS IN THE KEYBOARD ARE PRESSED, INTERRUPT EVERTYHING 
+			; AND DETERMINE NEW TRESHOLDS. DEPENDING ON THE SETTING VARIABLE, 
+			; LOW OR HIGH TRESHOLD IS ENTERED. FIRST INTERRUPT WILL TAKE LOW 
+			; TRESHOLD, SECOND WILL TAKE HIGH, THIRD WILL TAKE LOW, ETC. 
+				
+KEYBOARD_TAKE_INPUT_ISR_ PROC
+			
+			
+			LDR		R1, =GPIO_PORTA_ISC
+			MOV		R0, #0x08
+			STR		R0, [R1]
+			
+			; THREE READINGS WILL BE TAKEN AND R10 WILL 
+			; HOLD THE CURRENT NUMBER OF READING. 
+			; THE TOTAL RESULT WILL BE HELD IN R9 
+			MOV		R10, #0
+			MOV		R9, #0 
+			
+			 
+			
+readall		LDR		R1, =GPIO_PORTC_DATA
+			LDR		R0, [R1]
+			BIC		R0, #0xF0 
+			STR		R0, [R1]
+			PUSH {R1, R2, R3, R4, LR}
+			BL 		DEBOUNCE_A 
+			POP {R1, R2, R3, R4, LR}
+			
+			MVN		R0, R0 
+			ANDS 	R0, #0xF0; CHECK IF ANY BUTTON PRESSED
+			BEQ		readall
+			BNE 	determiner  
+			
+determiner 
+			LSR 	R0, #4 
+			MVN 	R0, R0
+			; R2 WILL HOLD THE R VALUE 
+			MOV		R2, #0 
+loopr		ANDS	R3, R0, #0x01 
+			BEQ 	determinel 
+			ADDNE	R2, #1 
+			LSR		R0, #1 
+			BNE		loopr 
+			
+determinel 	MOV		R3, #0 ; R3 WILL HOLD THE L VALUE 
+			LDR		R1, =GPIO_PORTC_DATA
+			LDR		R4, =0x10 ; OUTPUT HIGH TO LINE 1 
+			
+output		MVN		R4, R4 
+			STR		R4, [R1] ; GIVE THE OUTPUT 
+			MVN 	R4, R4
+			
+			PUSH {R1, R2, R3, R4, LR}
+			BL 		DEBOUNCE_A
+			POP {R1, R2, R3, R4, LR}
+			
+			LSR		R0, #4 
+			MVN		R0, R0 
+			ANDS 	R0, #0x0F; CHECK WHETHER THE BUTTON PRESSED IN THIS LINE 
+			BNE		obtain 
+			ADDEQ	R3, #1 
+			LSLEQ	R4, #1 ; CHANGE THE LINE 
+			BEQ		output 
+
+			; AT THIS POINT R VALUE IS IN R2 AND L VALUE IS IN R3 
+obtain 		MOV		R0, #4
+			MUL		R0, R3 
+			ADD		R0, R2
+			
+			CMP		R10, #0 
+			MOVEQ	R1, #100
+			CMP 	R10, #1 
+			MOVEQ	R1, #10 
+			CMP		R10, #2 
+			MOVEQ	R1, #1
+			
+			MUL		R0, R1 
+			ADD		R9, R0
+			
+			CMP		R10, #2 
+			BEQ		store
+			ADD		R10, #1 
+			BNE		release 
+
+release
+			PUSH {R1, R2, R3, R4, LR}
+			BL 		DEBOUNCE_A
+			POP {R1, R2, R3, R4, LR}
+			
+			LSR		R0, #4 
+			MVN		R0, R0 
+			ANDS 	R0, #0x0F; 
+			BNE		release
+			B readall
+			
+store 		LDR		R1, =TRESHOLD_SETTING_MODE
+			LDR		R0, [R1]
+			CMP		R0, #0 
+			LDREQ	R1, =LOW_FREQ_T 
+			LDRNE	R1, =HIGH_FREQ_T 
+			STR		R9, [R1]
+			
+			LDR		R1, =GPIO_PORTA_ISC
+			MOV		R0, #0x08
+			STR		R0, [R1]
+			
+			BX LR 
+			ENDP 

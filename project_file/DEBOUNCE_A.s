@@ -1,0 +1,30 @@
+GPIO_PORTA_DATA		EQU 	0x400043FC
+;LABEL		DIRECTIVE	VALUE		COMMENT
+			AREA    	DEBOUNCE_A, READONLY, CODE
+			THUMB
+			EXPORT  	DEBOUNCE_A ; Make available
+			EXTERN 		DELAY 	
+			; GET A DEBOUNCED READING 
+DEBOUNCE_A_ 	PROC
+initialread LDR		R1, =GPIO_PORTA_DATA
+			MOV		R5, #10 
+			LDR		R0, [R1]
+			
+			PUSH{R0, R1, R2, R5, LR}
+			MOV		R5, #100
+			BL		DELAY 
+			POP {R0, R1, R2, R5, LR}
+			
+otherread	LDR 	R2, [R1]
+			CMP 	R0, R2 
+			MOVNE	R5, #10 
+			BNE 	initialread 
+			SUBS	R5, #1 
+			BEQ		over
+			BNE		otherread 
+	
+over		BX LR ; THE DEBOUNCED READING IS LEFT IN R0 
+	
+ENDP 
+	
+END 
